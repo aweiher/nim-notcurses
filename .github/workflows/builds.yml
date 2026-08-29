@@ -20,17 +20,16 @@ jobs:
       matrix:
         # Linux only in this fork; macOS and Windows are dropped, not fixed.
         #
-        # The runner is the whole matrix: each one pins both Nim and Notcurses,
-        # and the two of them happen to span exactly what this package claims.
+        # One runner, and it pins both toolchain and library:
         #
-        #   ubuntu-24.04  Nim 1.6.14  libnotcurses 3.0.7
-        #   ubuntu-26.04  Nim 2.2.4   libnotcurses 3.0.17
+        #   ubuntu-26.04  Nim 2.2.4  libnotcurses 3.0.17
         #
-        # Bottom end is `requires "nim >= 1.6.0"`; top end is current. The two
-        # Notcurses patch levels are the point of building twice: the runtime
-        # guard in abi/common.nim raises on major, warns on minor and ignores
-        # patch, and that tolerance is only worth something if it is exercised.
-        os: [ ubuntu-24.04, ubuntu-26.04 ]
+        # ubuntu-24.04 was dropped rather than kept red. Its Nim is 1.6.14 and
+        # stew, a dependency of this package, needs >= 1.6.18 — so the archive
+        # cannot satisfy the build there at all. It also carries libnotcurses
+        # 3.0.7, whose NCCHESSWHITE still holds the pre-3.0.17 value; the
+        # constant in abi/constants/ncseqs.nim now matches 3.0.17.
+        os: [ ubuntu-26.04 ]
     name: 🐧 ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     defaults:

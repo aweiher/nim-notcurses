@@ -69,8 +69,11 @@ const
   NCSUITSWHITE* = L"♡♢♤♧"
   NCCHESSBLACK* = L"♟♜♞♝♛♚"
   # https://github.com/dankamongmen/notcurses/pull/2712
-  # NCCHESSWHITE* = L"♙♖♘♗♕♔"
-  NCCHESSWHITE* = L"♟♜♞♝♛♚"
+  # Through v3.0.16 NCCHESSWHITE was a copy of NCCHESSBLACK: the name and the
+  # comment said white, the codepoints were black. v3.0.17 fixed it. This is
+  # the fixed value, so the wrapper now needs libnotcurses >= 3.0.17 for
+  # tests/notcurses/test_abi.nim to pass.
+  NCCHESSWHITE* = L"♙♖♘♗♕♔"
   NCDICE*       = L"⚀⚁⚂⚃⚄⚅"
   NCMUSICSYM*   = L"♩♪♫♬♭♮♯"
 
