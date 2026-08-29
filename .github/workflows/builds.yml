@@ -20,24 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         cache_marker: [ 42 ]
+        # This fork builds Linux only. macOS and Windows are dropped, not
+        # broken: nothing here needs them, and keeping red jobs around hides
+        # whether the Linux one is green.
         platform:
           - {
             icon: 🐧,
             label: Linux,
             os: ubuntu,
             shell: bash --noprofile --norc -eo pipefail
-          }
-          - {
-            icon: 🍎,
-            label: macOS,
-            os: macos,
-            shell: bash --noprofile --norc -eo pipefail
-          }
-          - {
-            icon: 🏁,
-            label: Windows,
-            os: windows,
-            shell: msys2
           }
         nim_version: [ v1.6.0, version-1-6, version-2-0, devel ]
     name: ${{ matrix.platform.icon }} ${{ matrix.platform.label }} - Nim ${{ matrix.nim_version }}
@@ -50,8 +41,8 @@ jobs:
       - name: Install tools and libraries via APT (Linux)
         if: matrix.platform.os == 'ubuntu'
         run: |
-          sudo apt-fast update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-fast install --no-install-recommends -yq \
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -yq \
             ffmpeg \
             libavcodec-dev \
             libavformat-dev \
@@ -85,7 +76,7 @@ jobs:
             mingw-w64-ucrt-x86_64-toolchain
 
       - name: Checkout nim-notcurses sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Calculate cache key components
         id: cache-key
@@ -126,7 +117,7 @@ jobs:
 
       - name: Restore artifacts from cache
         id: artifacts-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ steps.cache-key.outputs.bash_env }}

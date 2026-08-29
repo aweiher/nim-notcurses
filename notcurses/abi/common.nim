@@ -27,6 +27,15 @@ func nckey_supppuaa_p*(w: uint32): bool =
 func nckey_supppuab_p*(w: uint32): bool =
   (w >= 0x00100000'u32) and (w <= 0x0010fffd'u32)
 
+# Notcurses declares its init entry points as `const notcurses_options*`, while
+# the `Init` proc types in ../api carry a plain `ptr notcurses_options` — Nim
+# has no way to spell a const pointer. GCC treated the mismatch as a warning
+# until GCC 14 promoted it to an error, which makes this wrapper fail to build
+# on any current toolchain. Demote it here rather than in every consumer:
+# `passC` is global to the compilation, so a project that imports this module
+# inherits the flag and does not have to know about the discrepancy.
+{.passC: "-Wno-error=incompatible-pointer-types".}
+
 const nc_header = "notcurses/notcurses.h"
 
 when defined(coverage):
