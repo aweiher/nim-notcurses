@@ -19,61 +19,41 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cache_marker: [ 42 ]
-        # This fork builds Linux only. macOS and Windows are dropped, not
-        # broken: nothing here needs them, and keeping red jobs around hides
-        # whether the Linux one is green.
-        platform:
-          - {
-            icon: 🐧,
-            label: Linux,
-            os: ubuntu,
-            shell: bash --noprofile --norc -eo pipefail
-          }
-        nim_version: [ v1.6.0, version-1-6, version-2-0, devel ]
-    name: ${{ matrix.platform.icon }} ${{ matrix.platform.label }} - Nim ${{ matrix.nim_version }}
-    runs-on: ${{ matrix.platform.os }}-latest
+        cache_marker: [ 43 ]
+        # Linux only in this fork. macOS and Windows are dropped, not fixed —
+        # nothing here needs them, and red jobs hide whether Linux is green.
+        #
+        # Two runners on purpose: they carry different patch levels of
+        # libnotcurses (24.04 → 3.0.7, 26.04 → 3.0.17), which is exactly the
+        # span this wrapper claims to tolerate. Its runtime guard in
+        # abi/common.nim raises only on a major mismatch, warns on minor, and
+        # does not look at patch — so the claim is only worth something if more
+        # than one patch level is actually built against.
+        os: [ ubuntu-24.04, ubuntu-26.04 ]
+        nim_version: [ version-1-6, version-2-0, devel ]
+    name: 🐧 ${{ matrix.os }} - Nim ${{ matrix.nim_version }}
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: ${{ matrix.platform.shell }} {0}
+        shell: bash --noprofile --norc -eo pipefail {0}
 
     steps:
-      - name: Install tools and libraries via APT (Linux)
-        if: matrix.platform.os == 'ubuntu'
+      # Notcurses comes from the distro, not from a CMake build in CI. Building
+      # it from source cost the bulk of this workflow's wall clock and all of
+      # its cache complexity, to produce a library the archive already ships.
+      #
+      # Both -dev packages are needed and it is not obvious why:
+      # libnotcurses-dev carries the .so, the .a, the .pc and the CMake files
+      # but NOT a single header. notcurses.h, nckeys.h, direct.h and version.h
+      # live in libnotcurses-core-dev.
+      - name: Install Notcurses and tools via APT
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -yq \
-            ffmpeg \
-            libavcodec-dev \
-            libavformat-dev \
-            libdeflate-dev \
-            libswscale-dev \
-            libunistring-dev
-
-      - name: Install tools and libraries via Homebrew (macOS)
-        if: matrix.platform.os == 'macos'
-        run: |
-          brew install \
-            bash \
-            ffmpeg \
-            libdeflate \
-            libunistring \
-            ncurses \
-            pkg-config
-
-      - name: Install tools and libraries via MSYS2 (Windows)
-        if: matrix.platform.os == 'windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          install: >
-            base-devel
-            git
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ffmpeg
-            mingw-w64-ucrt-x86_64-libdeflate
-            mingw-w64-ucrt-x86_64-libunistring
-            mingw-w64-ucrt-x86_64-toolchain
+            libnotcurses-dev \
+            libnotcurses-core-dev
+          echo
+          pkg-config --modversion notcurses
 
       - name: Checkout nim-notcurses sources
         uses: actions/checkout@v4
@@ -82,9 +62,7 @@ jobs:
         id: cache-key
         run: |
           export CHOOSENIM_VERSION=$(curl -sSfL https://nim-lang.org/choosenim/stable)
-          export NOTCURSES_VERSION=$(cat .notcurses_version)
           echo "choosenim_version=${CHOOSENIM_VERSION}" >> ${GITHUB_OUTPUT}
-          echo "notcurses_version=${NOTCURSES_VERSION}" >> ${GITHUB_OUTPUT}
           tmpdir="$(mktemp -d)" && cd "${tmpdir}"
           clone1b () {
             echo "$1_commit=$( \
@@ -99,21 +77,9 @@ jobs:
           clone1b nim \
                   https://github.com/nim-lang/Nim.git \
                   ${{ matrix.nim_version }}
-          clone1b notcurses \
-                  https://github.com/dankamongmen/notcurses.git \
-                  v${NOTCURSES_VERSION}
-          if [[ ${{ matrix.platform.os }} = windows ]]; then
-            echo "bash_env=$(cygpath -m "${HOME}")/.bash_env" >> ${GITHUB_OUTPUT}
-            echo "choosenim=$(cygpath -m "${USERPROFILE}")/.choosenim" >> ${GITHUB_OUTPUT}
-            echo "nimble=$(cygpath -m "${HOME}")/.nimble" >> ${GITHUB_OUTPUT}
-            echo "notcurses=$(cygpath -m "${HOME}")/repos/notcurses" >> ${GITHUB_OUTPUT}
-          else
-            echo "bash_env=${HOME}/.bash_env" >> ${GITHUB_OUTPUT}
-            echo "choosenim=${HOME}/.choosenim" >> ${GITHUB_OUTPUT}
-            echo "nimble=${HOME}/.nimble" >> ${GITHUB_OUTPUT}
-            echo "notcurses=${HOME}/repos/notcurses" >> ${GITHUB_OUTPUT}
-          fi
-          echo "cmake_version=$(cmake --version | awk 'FNR==1{print $3}')" >> ${GITHUB_OUTPUT}
+          echo "bash_env=${HOME}/.bash_env" >> ${GITHUB_OUTPUT}
+          echo "choosenim=${HOME}/.choosenim" >> ${GITHUB_OUTPUT}
+          echo "nimble=${HOME}/.nimble" >> ${GITHUB_OUTPUT}
 
       - name: Restore artifacts from cache
         id: artifacts-cache
@@ -123,58 +89,12 @@ jobs:
             ${{ steps.cache-key.outputs.bash_env }}
             ${{ steps.cache-key.outputs.choosenim }}
             ${{ steps.cache-key.outputs.nimble }}/bin
-            ${{ steps.cache-key.outputs.notcurses }}
-          key: "${{ matrix.platform.os }}\
+          key: "${{ matrix.os }}\
                 +choosenim_version:${{ steps.cache-key.outputs.choosenim_version }}\
                 +choosenim_commit:${{ steps.cache-key.outputs.choosenim_commit }}\
                 +nim:${{ matrix.nim_version }}\
                 +nim_commit:${{ steps.cache-key.outputs.nim_commit }}\
-                +notcurses_version:${{ steps.cache-key.outputs.notcurses_version }}\
-                +notcurses_commit:${{ steps.cache-key.outputs.notcurses_commit }}\
-                +cmake_version:${{ steps.cache-key.outputs.cmake_version }}\
                 +cache_marker:${{ matrix.cache_marker }}"
-
-      - name: Checkout Notcurses sources and compile
-        if: steps.artifacts-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "${HOME}/repos" && cd "${HOME}/repos"
-          git clone --depth 1 https://github.com/dankamongmen/notcurses.git \
-                    --branch v${{ steps.cache-key.outputs.notcurses_version }}
-          cd notcurses
-          mkdir build && cd build
-          if [[ ${{ matrix.platform.os }} = windows ]]; then
-            cmake .. -G"MSYS Makefiles" \
-                     -DCMAKE_BUILD_TYPE=Release \
-                     -DUSE_DOCTEST=off \
-                     -DUSE_PANDOC=off
-          elif [[ ${{ matrix.platform.os }} = macos ]]; then
-            cmake .. -DCMAKE_BUILD_TYPE=Release \
-                     -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-                     -DUSE_DOCTEST=off \
-                     -DUSE_PANDOC=off
-          else
-            cmake .. -DCMAKE_BUILD_TYPE=Release \
-                     -DUSE_DOCTEST=off \
-                     -DUSE_PANDOC=off
-          fi
-          make -j${NPROC}
-
-      - name: Install Notcurses
-        run: |
-          cd "${HOME}/repos/notcurses/build"
-          if [[ ${{ matrix.platform.os }} != windows ]]; then
-            if [[ ${{ matrix.platform.os }} = macos ]]; then
-              make install
-            else
-              sudo make install
-              sudo ldconfig
-            fi
-          else
-            cp -R ../include/notcurses /ucrt64/include
-            cp -R ../include/ncpp /ucrt64/include
-            cp *.dll /ucrt64/bin
-            cp *.dll.a /ucrt64/lib
-          fi
 
       - name: Install choosenim and Nim
         if: steps.artifacts-cache.outputs.cache-hit != 'true'
@@ -182,15 +102,9 @@ jobs:
           mkdir -p "${HOME}/Downloads" && cd "${HOME}/Downloads"
           curl -sSf -O https://nim-lang.org/choosenim/init.sh
           chmod +x init.sh
-          if [[ ${{ matrix.platform.os }} = windows ]]; then
-            mkdir -p "$(cygpath "${USERPROFILE}")/.nimble/bin"
-          fi
           export CHOOSENIM_CHOOSE_VERSION=\#${{ steps.cache-key.outputs.nim_commit }}
           export CHOOSENIM_NO_ANALYTICS=1
           ./init.sh -y
-          if [[ ${{ matrix.platform.os }} = windows ]]; then
-            mv "$(cygpath "${USERPROFILE}")/.nimble" "${HOME}/"
-          fi
           export NIMBLE_DIR="${HOME}/.nimble"
           export PATH="${NIMBLE_DIR}/bin:${PATH}"
           echo 'export NIMBLE_DIR="${HOME}/.nimble"' >> "${HOME}/.bash_env"
@@ -200,15 +114,12 @@ jobs:
           echo
           nimble --version
 
-      # maybe can be reworked (along with caching logic) re: Nimble
-      # corresponding to Nim v2, with conditional logic for older Nim/Nimble
       - name: Install project dependencies per Nimble
         run: |
           # delete broken symlinks, which can arise because e.g. the cache
           # restored a symlink that points to an executable within
           # ../pkgs/foo-1.2.3/ but the project's .nimble file has been updated
-          # to install foo-#head. In the case of a broken symlink, Nimble's
-          # auto-overwrite fails (only sometimes? only on macOS?)
+          # to install foo-#head
           source "${HOME}/.bash_env"
           cd "${NIMBLE_DIR}/bin"
           find -L . -type l -delete
@@ -222,7 +133,6 @@ jobs:
           extras/build_examples.sh
           extras/build_examples.sh -d:release
 
-      # Notcurses is currently not able to access Windows ConPTY in GitHub Actions
       - name: Build and run tests
         run: |
           source "${HOME}/.bash_env"
