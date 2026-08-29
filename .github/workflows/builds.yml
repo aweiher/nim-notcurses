@@ -14,126 +14,60 @@ jobs:
     env:
       COLORTERM: 24bit
       LANG: en_US.UTF-8
-      NPROC: 2
       TERM: xterm-256color
     strategy:
       fail-fast: false
       matrix:
-        cache_marker: [ 43 ]
-        # Linux only in this fork. macOS and Windows are dropped, not fixed —
-        # nothing here needs them, and red jobs hide whether Linux is green.
+        # Linux only in this fork; macOS and Windows are dropped, not fixed.
         #
-        # Two runners on purpose: they carry different patch levels of
-        # libnotcurses (24.04 → 3.0.7, 26.04 → 3.0.17), which is exactly the
-        # span this wrapper claims to tolerate. Its runtime guard in
-        # abi/common.nim raises only on a major mismatch, warns on minor, and
-        # does not look at patch — so the claim is only worth something if more
-        # than one patch level is actually built against.
+        # The runner is the whole matrix: each one pins both Nim and Notcurses,
+        # and the two of them happen to span exactly what this package claims.
+        #
+        #   ubuntu-24.04  Nim 1.6.14  libnotcurses 3.0.7
+        #   ubuntu-26.04  Nim 2.2.4   libnotcurses 3.0.17
+        #
+        # Bottom end is `requires "nim >= 1.6.0"`; top end is current. The two
+        # Notcurses patch levels are the point of building twice: the runtime
+        # guard in abi/common.nim raises on major, warns on minor and ignores
+        # patch, and that tolerance is only worth something if it is exercised.
         os: [ ubuntu-24.04, ubuntu-26.04 ]
-        nim_version: [ version-1-6, version-2-0, devel ]
-    name: 🐧 ${{ matrix.os }} - Nim ${{ matrix.nim_version }}
+    name: 🐧 ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash --noprofile --norc -eo pipefail {0}
 
     steps:
-      # Notcurses comes from the distro, not from a CMake build in CI. Building
-      # it from source cost the bulk of this workflow's wall clock and all of
-      # its cache complexity, to produce a library the archive already ships.
+      # Everything comes from the archive. Building Notcurses from source and
+      # installing Nim via choosenim cost the bulk of this workflow's wall
+      # clock and all of its cache complexity.
       #
-      # Both -dev packages are needed and it is not obvious why:
+      # Both Notcurses -dev packages are needed, and it is not obvious why:
       # libnotcurses-dev carries the .so, the .a, the .pc and the CMake files
-      # but NOT a single header. notcurses.h, nckeys.h, direct.h and version.h
-      # live in libnotcurses-core-dev.
-      - name: Install Notcurses and tools via APT
+      # but not a single header. notcurses.h, nckeys.h, direct.h and version.h
+      # are in libnotcurses-core-dev. `nimble` ships inside `nim`.
+      - name: Install Nim and Notcurses via APT
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -yq \
+            nim \
             libnotcurses-dev \
             libnotcurses-core-dev
           echo
-          pkg-config --modversion notcurses
+          nim --version | head -1
+          nimble --version | head -1
+          echo "libnotcurses $(pkg-config --modversion notcurses)"
 
       - name: Checkout nim-notcurses sources
         uses: actions/checkout@v4
 
-      - name: Calculate cache key components
-        id: cache-key
-        run: |
-          export CHOOSENIM_VERSION=$(curl -sSfL https://nim-lang.org/choosenim/stable)
-          echo "choosenim_version=${CHOOSENIM_VERSION}" >> ${GITHUB_OUTPUT}
-          tmpdir="$(mktemp -d)" && cd "${tmpdir}"
-          clone1b () {
-            echo "$1_commit=$( \
-              git clone --depth 1 $2 $1 \
-                        --branch $3 2>/dev/null && \
-              cd $1 && git rev-parse HEAD \
-              | cut -c1-10)" >> ${GITHUB_OUTPUT}
-          }
-          clone1b choosenim \
-                  https://github.com/dom96/choosenim.git \
-                  v${CHOOSENIM_VERSION}
-          clone1b nim \
-                  https://github.com/nim-lang/Nim.git \
-                  ${{ matrix.nim_version }}
-          echo "bash_env=${HOME}/.bash_env" >> ${GITHUB_OUTPUT}
-          echo "choosenim=${HOME}/.choosenim" >> ${GITHUB_OUTPUT}
-          echo "nimble=${HOME}/.nimble" >> ${GITHUB_OUTPUT}
-
-      - name: Restore artifacts from cache
-        id: artifacts-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.cache-key.outputs.bash_env }}
-            ${{ steps.cache-key.outputs.choosenim }}
-            ${{ steps.cache-key.outputs.nimble }}/bin
-          key: "${{ matrix.os }}\
-                +choosenim_version:${{ steps.cache-key.outputs.choosenim_version }}\
-                +choosenim_commit:${{ steps.cache-key.outputs.choosenim_commit }}\
-                +nim:${{ matrix.nim_version }}\
-                +nim_commit:${{ steps.cache-key.outputs.nim_commit }}\
-                +cache_marker:${{ matrix.cache_marker }}"
-
-      - name: Install choosenim and Nim
-        if: steps.artifacts-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "${HOME}/Downloads" && cd "${HOME}/Downloads"
-          curl -sSf -O https://nim-lang.org/choosenim/init.sh
-          chmod +x init.sh
-          export CHOOSENIM_CHOOSE_VERSION=\#${{ steps.cache-key.outputs.nim_commit }}
-          export CHOOSENIM_NO_ANALYTICS=1
-          ./init.sh -y
-          export NIMBLE_DIR="${HOME}/.nimble"
-          export PATH="${NIMBLE_DIR}/bin:${PATH}"
-          echo 'export NIMBLE_DIR="${HOME}/.nimble"' >> "${HOME}/.bash_env"
-          echo 'export PATH="${NIMBLE_DIR}/bin:${PATH}"' >> "${HOME}/.bash_env"
-          echo
-          nim --version
-          echo
-          nimble --version
-
       - name: Install project dependencies per Nimble
-        run: |
-          # delete broken symlinks, which can arise because e.g. the cache
-          # restored a symlink that points to an executable within
-          # ../pkgs/foo-1.2.3/ but the project's .nimble file has been updated
-          # to install foo-#head
-          source "${HOME}/.bash_env"
-          cd "${NIMBLE_DIR}/bin"
-          find -L . -type l -delete
-          cd -
-          source "${HOME}/.bash_env"
-          nimble --accept install --depsOnly
+        run: nimble --accept install --depsOnly
 
       - name: Build examples
         run: |
-          source "${HOME}/.bash_env"
           extras/build_examples.sh
           extras/build_examples.sh -d:release
 
       - name: Build and run tests
-        run: |
-          source "${HOME}/.bash_env"
-          nimble --verbose test
+        run: nimble --verbose test
