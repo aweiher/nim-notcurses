@@ -34,7 +34,7 @@ func init*(T: typedesc[Options], flags: openArray[InitFlags] = [],
   let flags = flags.foldl(bitor(a, b.uint64), 0'u64)
   T(flags: flags, term: term)
 
-proc init*(T: typedesc[NotcursesDirect], init: Init, initName: string,
+proc init*(T: typedesc[NotcursesDirect], initFn: Init, initName: string,
     options = Options.init, file = stdout): T =
   var
     cPtr: ptr ncdirect
@@ -44,7 +44,7 @@ proc init*(T: typedesc[NotcursesDirect], init: Init, initName: string,
   when (NimMajor, NimMinor, NimPatch) > (1, 6, 10):
     {.push warning[BareExcept]: off.}
   try:
-    cPtr = init(termtype, file, options.flags)
+    cPtr = initFn(termtype, file, options.flags)
   except Exception:
     raise (ref ApiDefect)(msg: failedMsg)
   when (NimMajor, NimMinor, NimPatch) > (1, 6, 10):
@@ -52,10 +52,10 @@ proc init*(T: typedesc[NotcursesDirect], init: Init, initName: string,
   if cPtr.isNil: raise (ref ApiDefect)(msg: failedMsg)
   T(cPtr: cPtr)
 
-macro init*(T: typedesc[NotcursesDirect], init: Init, options = Options.init,
+macro init*(T: typedesc[NotcursesDirect], initFn: Init, options = Options.init,
     file = stdout): NotcursesDirect =
-  let name = init.strVal
-  quote do: `T`.init(`init`, `name`, `options`, `file`)
+  let name = initFn.strVal
+  quote do: `T`.init(`initFn`, `name`, `options`, `file`)
 
 proc putStr*(ncd: NotcursesDirect, s: string, channel = Channel(0)):
     Result[ApiSuccess, ApiErrorCode] {.discardable.} =
