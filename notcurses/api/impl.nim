@@ -171,7 +171,7 @@ func init*(T: typedesc[Options], flags: openArray[InitFlags] = [], term = "",
     flags: flags)
   T(cObj: cObj)
 
-proc init*(T: typedesc[Notcurses], init: Init, initName: string,
+proc init*(T: typedesc[Notcurses], initFn: Init, initName: string,
     options = Options.init, file = stdout): T =
   var
     cOpts = options.cObj
@@ -180,7 +180,7 @@ proc init*(T: typedesc[Notcurses], init: Init, initName: string,
   when (NimMajor, NimMinor, NimPatch) > (1, 6, 10):
     {.push warning[BareExcept]: off.}
   try:
-    cPtr = init(addr cOpts, file)
+    cPtr = initFn(addr cOpts, file)
   except Exception:
     raise (ref ApiDefect)(msg: failedMsg)
   when (NimMajor, NimMinor, NimPatch) > (1, 6, 10):
@@ -188,10 +188,10 @@ proc init*(T: typedesc[Notcurses], init: Init, initName: string,
   if cPtr.isNil: raise (ref ApiDefect)(msg: failedMsg)
   T(cPtr: cPtr)
 
-macro init*(T: typedesc[Notcurses], init: Init, options = Options.init,
+macro init*(T: typedesc[Notcurses], initFn: Init, options = Options.init,
     file = stdout): Notcurses =
-  let name = init.strVal
-  quote do: `T`.init(`init`, `name`, `options`, `file`)
+  let name = initFn.strVal
+  quote do: `T`.init(`initFn`, `name`, `options`, `file`)
 
 func key*(input: Input): Opt[Keys] =
   let codepoint = input.codepoint

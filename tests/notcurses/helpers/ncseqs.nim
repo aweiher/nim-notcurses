@@ -92,8 +92,8 @@ const
   NCSUITSWHITE_ns* = "♡♢♤♧"
   NCCHESSBLACK_ns* = "♟♜♞♝♛♚"
   # https://github.com/dankamongmen/notcurses/pull/2712
-  # NCCHESSWHITE_ns = "♙♖♘♗♕♔"
-  NCCHESSWHITE_ns* = "♟♜♞♝♛♚"
+  # Fixed in Notcurses v3.0.17; see notcurses/abi/constants/ncseqs.nim
+  NCCHESSWHITE_ns* = "♙♖♘♗♕♔"
   NCDICE_ns* = "⚀⚁⚂⚃⚄⚅"
   NCMUSICSYM_ns* = "♩♪♫♬♭♮♯"
   NCBOXLIGHT_ns* = "┌┐└┘─│"
